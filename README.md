@@ -1,5 +1,7 @@
 # 🛒 쇼핑 리스트 앱
 
+**배포 URL**: https://king2jjang.github.io/shopping-list-app/
+
 간단하게 쓸 수 있는 쇼핑 리스트 웹 앱입니다. 별도 설치 없이 브라우저에서 바로 실행되며, 항목은 `localStorage`에 저장되어 새로고침해도 유지됩니다.
 
 ## 기능
