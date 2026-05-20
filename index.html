@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-<!-- Created: 2026-05-19 -->
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -70,6 +69,7 @@
     }
 
     .input-row button:hover { background: #5a67d8; }
+    .input-row button:disabled { background: #a0aec0; cursor: not-allowed; }
 
     .stats {
       font-size: 0.85rem;
@@ -155,6 +155,13 @@
     }
 
     .clear-btn:hover { background: #fff5f5; color: #e53e3e; border-color: #fed7d7; }
+
+    .loading {
+      text-align: center;
+      padding: 32px 0;
+      color: #a0aec0;
+      font-size: 0.95rem;
+    }
   </style>
 </head>
 <body>
@@ -168,34 +175,39 @@
 
   <div class="stats" id="stats"></div>
   <ul id="list"></ul>
-  <div class="empty" id="empty">아직 아이템이 없어요. 추가해 보세요!</div>
-  <button class="clear-btn" id="clearBtn">완료 항목 모두 삭제</button>
+  <div class="loading" id="loading">불러오는 중...</div>
+  <div class="empty" id="empty" style="display:none">아직 아이템이 없어요. 추가해 보세요!</div>
+  <button class="clear-btn" id="clearBtn" style="display:none">완료 항목 모두 삭제</button>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  const input   = document.getElementById('itemInput');
-  const addBtn  = document.getElementById('addBtn');
-  const listEl  = document.getElementById('list');
-  const emptyEl = document.getElementById('empty');
-  const statsEl = document.getElementById('stats');
-  const clearBtn= document.getElementById('clearBtn');
+  const SUPABASE_URL = 'https://onvktwxmitoriynpqqbo.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9udmt0d3htaXRvcml5bnBxcWJvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMjI1OTQsImV4cCI6MjA5NDc5ODU5NH0.Hn4fBIpt7oH2PYcuwswZ8qDlAaxlnyTWN4XXuLUO96M';
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  let items = JSON.parse(localStorage.getItem('shoppingItems') || '[]');
+  const input     = document.getElementById('itemInput');
+  const addBtn    = document.getElementById('addBtn');
+  const listEl    = document.getElementById('list');
+  const emptyEl   = document.getElementById('empty');
+  const statsEl   = document.getElementById('stats');
+  const clearBtn  = document.getElementById('clearBtn');
+  const loadingEl = document.getElementById('loading');
 
-  function save() {
-    localStorage.setItem('shoppingItems', JSON.stringify(items));
-  }
+  let items = [];
 
   function render() {
+    loadingEl.style.display = 'none';
     listEl.innerHTML = '';
-    items.forEach((item, i) => {
+
+    items.forEach(item => {
       const li = document.createElement('li');
       if (item.done) li.classList.add('done');
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = item.done;
-      cb.addEventListener('change', () => { items[i].done = cb.checked; save(); render(); });
+      cb.addEventListener('change', () => toggleDone(item.id, cb.checked));
 
       const name = document.createElement('span');
       name.className = 'name';
@@ -205,38 +217,82 @@
       del.className = 'del';
       del.textContent = '✕';
       del.title = '삭제';
-      del.addEventListener('click', () => { items.splice(i, 1); save(); render(); });
+      del.addEventListener('click', () => deleteItem(item.id));
 
       li.append(cb, name, del);
       listEl.appendChild(li);
     });
 
     const total = items.length;
-    const done  = items.filter(it => it.done).length;
-    emptyEl.style.display = total === 0 ? 'block' : 'none';
+    const done  = items.filter(i => i.done).length;
+    emptyEl.style.display  = total === 0 ? 'block' : 'none';
     clearBtn.style.display = done > 0 ? 'block' : 'none';
-    statsEl.textContent = total > 0 ? `총 ${total}개 · 완료 ${done}개 · 남은 ${total - done}개` : '';
+    statsEl.textContent    = total > 0 ? `총 ${total}개 · 완료 ${done}개 · 남은 ${total - done}개` : '';
   }
 
-  function addItem() {
+  async function loadItems() {
+    const { data, error } = await db
+      .from('shopping_items')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    items = data;
+    render();
+  }
+
+  async function addItem() {
     const text = input.value.trim();
     if (!text) { input.focus(); return; }
-    items.unshift({ text, done: false });
+    addBtn.disabled = true;
+    const { data, error } = await db
+      .from('shopping_items')
+      .insert({ text, done: false })
+      .select()
+      .single();
+    addBtn.disabled = false;
+    if (error) { console.error(error); return; }
+    items.unshift(data);
     input.value = '';
-    save();
     render();
     input.focus();
   }
 
+  async function toggleDone(id, done) {
+    const { error } = await db
+      .from('shopping_items')
+      .update({ done })
+      .eq('id', id);
+    if (error) { console.error(error); return; }
+    const item = items.find(i => i.id === id);
+    if (item) item.done = done;
+    render();
+  }
+
+  async function deleteItem(id) {
+    const { error } = await db
+      .from('shopping_items')
+      .delete()
+      .eq('id', id);
+    if (error) { console.error(error); return; }
+    items = items.filter(i => i.id !== id);
+    render();
+  }
+
+  async function clearDone() {
+    const { error } = await db
+      .from('shopping_items')
+      .delete()
+      .eq('done', true);
+    if (error) { console.error(error); return; }
+    items = items.filter(i => !i.done);
+    render();
+  }
+
   addBtn.addEventListener('click', addItem);
   input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addItem(); });
-  clearBtn.addEventListener('click', () => {
-    items = items.filter(it => !it.done);
-    save();
-    render();
-  });
+  clearBtn.addEventListener('click', clearDone);
 
-  render();
+  loadItems();
 </script>
 </body>
 </html>
